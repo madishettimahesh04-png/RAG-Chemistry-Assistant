@@ -1,5 +1,6 @@
 import os
 import gdown
+import zipfile
 import streamlit as st
 import pandas as pd
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -9,31 +10,34 @@ from groq import Groq
 st.title("🧪 MnSol ΔG Solvation Assistant")
 
 # -------------------------
-# DOWNLOAD FAISS FROM DRIVE
+# DOWNLOAD FAISS
 # -------------------------
 FILE_ID = "1gUKTTKNjOqI2jP3I6bGVSmFtb3JD7jn2"
-OUTPUT = "mnsol_faiss_index.zip"
+ZIP_FILE = "mnsol_faiss_index.zip"
 
 if not os.path.exists("mnsol_faiss_index"):
-    with st.spinner("Downloading vector database..."):
-        gdown.download(
-            f"https://drive.google.com/uc?id={FILE_ID}",
-            OUTPUT,
-            quiet=False
-        )
 
-        os.system("unzip mnsol_faiss_index.zip")
+    with st.spinner("Downloading vector database..."):
+
+        url = f"https://drive.google.com/uc?id={FILE_ID}"
+        gdown.download(url, ZIP_FILE, quiet=False)
+
+        with zipfile.ZipFile(ZIP_FILE, 'r') as zip_ref:
+            zip_ref.extractall(".")
+
 
 # -------------------------
 # LOAD DATA
 # -------------------------
 df = pd.read_csv("new_dataset_with_predictions.csv")
 
+
 # -------------------------
 # LOAD VECTORSTORE
 # -------------------------
 @st.cache_resource
 def load_vs():
+
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
@@ -47,10 +51,12 @@ def load_vs():
 vectorstore = load_vs()
 retriever = vectorstore.as_retriever(search_kwargs={"k":3})
 
+
 # -------------------------
-# GROQ
+# GROQ API
 # -------------------------
-client = Groq(api_key=st.secrets["Ggsk_JQPn8fsK1cha3I3LV04LWGdyb3FYvE1OP1cxrdwvyGIGzZDcKgph"])
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+
 
 query = st.text_input("Ask question")
 
@@ -60,8 +66,10 @@ if query:
 
     completion = client.chat.completions.create(
         model="llama-3.1-8b-instant",
-        messages=[{"role":"user","content":context + query}]
+        messages=[
+            {"role":"system","content":"You are a chemistry assistant"},
+            {"role":"user","content":context + query}
+        ]
     )
 
     st.write(completion.choices[0].message.content)
-
