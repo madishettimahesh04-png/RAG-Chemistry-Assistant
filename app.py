@@ -67,9 +67,32 @@ if query:
     completion = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role":"system","content":"You are a chemistry assistant"},
-            {"role":"user","content":context + query}
-        ]
+{
+"role":"system",
+"content":"""
+You are a computational chemistry assistant working with a solvation energy dataset.
+
+Task:
+1. Identify solute and solvent.
+2. Retrieve ΔG solvation from context.
+3. Present the value clearly.
+4. If multiple entries exist, summarize.
+5. If not found, say data not available.
+
+Never fabricate numerical values.
+"""
+},
+{
+"role":"user",
+"content":f"""
+Context from MnSol dataset:
+{context}
+
+User question:
+{query}
+"""
+}
+]
     )
 
     st.write(completion.choices[0].message.content)
