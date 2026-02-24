@@ -49,7 +49,7 @@ def load_vs():
     )
 
 vectorstore = load_vs()
-retriever = vectorstore.as_retriever(search_kwargs={"k":3})
+retriever = vectorstore.as_retriever(search_kwargs={"k":1})
 
 
 # -------------------------
@@ -66,20 +66,24 @@ if query:
 
     completion = client.chat.completions.create(
         model="llama-3.1-8b-instant",
-        messages=[
+messages=[
 {
 "role":"system",
 "content":"""
-You are a chemistry assistant specialized in solvation free energy prediction.
+You are a dataset-driven chemistry assistant.
 
-Instructions:
-- Extract the ΔG solvation value from the provided dataset context.
-- Output ONLY:
-    1. DeltaG value
-    2. Short scientific explanation (1–2 sentences).
-- Do NOT add greetings or extra text.
-- Do NOT invent values.
-- If value is missing, say: DeltaG not found in dataset.
+IMPORTANT RULES:
+- Answer ONLY using the provided dataset context.
+- Do NOT use external chemistry knowledge.
+- Do NOT give long theoretical explanations.
+- Extract the DeltaG value directly from context.
+- Provide only a short explanation based on the dataset entry.
+
+Output format:
+
+DeltaG: <value>
+
+Explanation: <short dataset-based explanation>.
 """
 },
 {
@@ -88,7 +92,7 @@ Instructions:
 Dataset Context:
 {context}
 
-Question:
+User Question:
 {query}
 """
 }
