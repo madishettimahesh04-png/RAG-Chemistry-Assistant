@@ -7,7 +7,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from groq import Groq
 
-st.title("🧪 MnSol ΔG Solvation Assistant")
+st.title("🧪LLM MnSol ΔG Solvation Assistant")
 
 # -------------------------
 # DOWNLOAD FAISS
@@ -70,25 +70,25 @@ if query:
 {
 "role":"system",
 "content":"""
-You are a computational chemistry assistant working with a solvation energy dataset.
+You are a chemistry assistant specialized in solvation free energy prediction.
 
-Task:
-1. Identify solute and solvent.
-2. Retrieve ΔG solvation from context.
-3. Present the value clearly.
-4. If multiple entries exist, summarize.
-5. If not found, say data not available.
-
-Never fabricate numerical values.
+Instructions:
+- Extract the ΔG solvation value from the provided dataset context.
+- Output ONLY:
+    1. DeltaG value
+    2. Short scientific explanation (1–2 sentences).
+- Do NOT add greetings or extra text.
+- Do NOT invent values.
+- If value is missing, say: DeltaG not found in dataset.
 """
 },
 {
 "role":"user",
 "content":f"""
-Context from MnSol dataset:
+Dataset Context:
 {context}
 
-User question:
+Question:
 {query}
 """
 }
