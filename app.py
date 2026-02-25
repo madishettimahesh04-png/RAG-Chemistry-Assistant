@@ -42,7 +42,7 @@ df = pd.read_csv("new_dataset_with_predictions.csv")
 solute_list = df["SoluteName"].astype(str).unique().tolist()
 solvent_list = df["Solvent"].astype(str).unique().tolist()
 
-# Formula → Solute mapping
+# Formula mapping
 formula_to_solute = dict(
     zip(
         df["Formula"].astype(str).str.lower(),
@@ -52,27 +52,22 @@ formula_to_solute = dict(
 
 
 # ------------------------------------------------
-# AUTO MATCH FUNCTIONS
+# MATCH FUNCTIONS
 # ------------------------------------------------
 def resolve_solute(user_input):
 
     key = user_input.lower().strip()
 
-    # Formula match
     if key in formula_to_solute:
         return formula_to_solute[key]
 
-    # Fuzzy match
     match, score, _ = process.extractOne(
         user_input,
         solute_list,
         scorer=fuzz.WRatio
     )
 
-    if score > 75:
-        return match
-
-    return user_input
+    return match if score > 75 else user_input
 
 
 def match_solvent(user_input):
@@ -83,14 +78,11 @@ def match_solvent(user_input):
         scorer=fuzz.WRatio
     )
 
-    if score > 75:
-        return match
-
-    return user_input
+    return match if score > 75 else user_input
 
 
 # ------------------------------------------------
-# EXACT DATASET LOOKUP ⭐
+# EXACT LOOKUP (INTEGER CHARGE FIX)
 # ------------------------------------------------
 def exact_lookup(solute, solvent, charge):
 
@@ -99,15 +91,16 @@ def exact_lookup(solute, solvent, charge):
         (df["Solvent"].str.lower() == solvent.lower())
     ]
 
+    # charge integer comparison
     if charge != "":
-        result = result[
-            result["Charge"].astype(str) == str(charge)
-        ]
+        try:
+            charge_int = int(charge)
+            result = result[result["Charge"] == charge_int]
+        except:
+            pass
 
     if len(result) > 0:
-        row = result.iloc[0]
-
-        return row["Predicted_DeltaGsolv"]
+        return result.iloc[0]["Predicted_DeltaGsolv"]
 
     return None
 
@@ -133,9 +126,8 @@ vectorstore = load_vectorstore()
 
 
 # ------------------------------------------------
-# HYBRID RETRIEVERS
+# RETRIEVERS (NO CACHE ✅)
 # ------------------------------------------------
-@st.cache_resource
 def create_retrievers(vectorstore):
 
     vector_retriever = vectorstore.as_retriever(
@@ -168,7 +160,7 @@ def hybrid_search(query):
 
 
 # ------------------------------------------------
-# GROQ API
+# GROQ
 # ------------------------------------------------
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
@@ -179,7 +171,7 @@ client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 st.subheader("Enter Molecule Details")
 
 formula = st.text_input("Formula or Solute Name")
-charge = st.text_input("Charge")
+charge = st.text_input("Charge (integer)")
 solvent = st.text_input("Solvent")
 
 search = st.button("Get DeltaG")
@@ -222,7 +214,7 @@ Explanation: Retrieved directly from MnSol dataset.
         st.stop()
 
     # ------------------------------------------------
-    # HYBRID RAG FALLBACK
+    # HYBRID SEARCH FALLBACK
     # ------------------------------------------------
     query = f"""
     SoluteName {matched_solute}
@@ -242,18 +234,11 @@ Explanation: Retrieved directly from MnSol dataset.
         messages=[
             {
                 "role": "system",
-                "content": """
-Answer ONLY using dataset context.
-Extract DeltaG value if present.
-Keep answer short.
-"""
+                "content": "Answer only using dataset context."
             },
             {
                 "role": "user",
-                "content": f"""
-Dataset Context:
-{context}
-"""
+                "content": context
             }
         ]
     )
