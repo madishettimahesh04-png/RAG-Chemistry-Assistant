@@ -14,9 +14,15 @@ from rapidfuzz import process, fuzz
 # ------------------------------------------------
 # TITLE
 # ------------------------------------------------
-st.title("🧪 MnSol ΔG Solvation Assistant")
-
-
+st.markdown("""
+<h1 style="
+text-align:center;
+background: linear-gradient(90deg,#00c6ff,#0072ff);
+-webkit-background-clip: text;
+color: transparent;">
+🤖 AI-Powered MnSol ΔG Assistant
+</h1>
+""", unsafe_allow_html=True)
 # ------------------------------------------------
 # DOWNLOAD FAISS INDEX
 # ------------------------------------------------
