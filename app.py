@@ -187,7 +187,7 @@ Provide step-by-step scientific reasoning and final answer.
             {"role": "system", "content": "Scientific reasoning assistant."},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.2
+        temperature=0
     )
 
     return completion.choices[0].message.content.strip()
