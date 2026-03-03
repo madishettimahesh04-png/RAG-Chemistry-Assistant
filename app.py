@@ -1,8 +1,9 @@
 # ==========================================================
-# 🤖 AI-Powered MnSol ΔG Assistant (ChatGPT Style Version)
+# 🤖 MnSol Conversational ΔG Assistant
 # ==========================================================
 
 import os
+import re
 import gdown
 import zipfile
 import streamlit as st
@@ -25,7 +26,7 @@ st.set_page_config(
 )
 
 # ------------------------------------------------
-# MODERN STYLING
+# STYLING
 # ------------------------------------------------
 st.markdown("""
 <style>
@@ -40,25 +41,24 @@ st.markdown("""
 .stChatInput textarea {
     border-radius: 12px;
 }
-h1 {
-    text-align: center;
-}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <h1 style="
+text-align:center;
 background: linear-gradient(90deg,#00c6ff,#0072ff);
 -webkit-background-clip: text;
 color: transparent;">
-🧪 AI-Powered MnSol ΔG Assistant
+🧪 MnSol AI Chemistry Assistant
 </h1>
 """, unsafe_allow_html=True)
 
-st.caption("Solvation Free Energy Assistant")
+st.caption("Ask anything about solvation free energy (ΔGsolv)")
+
 
 # ------------------------------------------------
-# DOWNLOAD FAISS INDEX
+# DOWNLOAD VECTOR DB
 # ------------------------------------------------
 FILE_ID = "1gUKTTKNjOqI2jP3I6bGVSmFtb3JD7jn2"
 ZIP_FILE = "mnsol_faiss_index.zip"
@@ -68,7 +68,6 @@ if not os.path.exists(INDEX_FOLDER):
     with st.spinner("Downloading vector database..."):
         url = f"https://drive.google.com/uc?id={FILE_ID}"
         gdown.download(url, ZIP_FILE, quiet=False)
-
         with zipfile.ZipFile(ZIP_FILE, "r") as zip_ref:
             zip_ref.extractall(".")
 
@@ -82,15 +81,12 @@ solute_list = df["SoluteName"].astype(str).unique().tolist()
 solvent_list = df["Solvent"].astype(str).unique().tolist()
 
 formula_to_solute = dict(
-    zip(
-        df["Formula"].astype(str).str.lower(),
-        df["SoluteName"]
-    )
+    zip(df["Formula"].astype(str).str.lower(), df["SoluteName"])
 )
 
 
 # ------------------------------------------------
-# MATCH FUNCTIONS
+# MATCHING FUNCTIONS
 # ------------------------------------------------
 def resolve_solute(user_input):
     key = user_input.lower().strip()
@@ -102,7 +98,7 @@ def resolve_solute(user_input):
         solute_list,
         scorer=fuzz.WRatio
     )
-    return match if score > 75 else user_input
+    return match if score > 75 else None
 
 
 def match_solvent(user_input):
@@ -111,30 +107,54 @@ def match_solvent(user_input):
         solvent_list,
         scorer=fuzz.WRatio
     )
-    return match if score > 75 else user_input
+    return match if score > 75 else None
 
 
-def exact_lookup(solute, solvent, charge):
-    result = df[
-        (df["SoluteName"].str.lower() == solute.lower()) &
-        (df["Solvent"].str.lower() == solvent.lower())
-    ]
+def try_exact_from_query(text):
+    """
+    Attempt to auto-detect solute, solvent, charge
+    from natural language question.
+    """
 
-    if charge != "":
+    found_solute = None
+    found_solvent = None
+    found_charge = None
+
+    # Detect charge like +1, -1, 2+
+    charge_match = re.search(r"([+-]?\d+)", text)
+    if charge_match:
         try:
-            charge_int = int(charge)
-            result = result[result["Charge"] == charge_int]
+            found_charge = int(charge_match.group())
         except:
             pass
 
-    if len(result) > 0:
-        return result.iloc[0]["Predicted_DeltaGsolv"]
+    # Detect solute & solvent via fuzzy match
+    for word in text.split():
+        sol = resolve_solute(word)
+        solv = match_solvent(word)
 
-    return None
+        if sol:
+            found_solute = sol
+        if solv:
+            found_solvent = solv
+
+    if found_solute and found_solvent:
+        result = df[
+            (df["SoluteName"] == found_solute) &
+            (df["Solvent"] == found_solvent)
+        ]
+
+        if found_charge is not None:
+            result = result[result["Charge"] == found_charge]
+
+        if len(result) > 0:
+            return result.iloc[0]["Predicted_DeltaGsolv"], found_solute, found_solvent
+
+    return None, None, None
 
 
 # ------------------------------------------------
-# LOAD VECTOR STORE
+# VECTOR STORE
 # ------------------------------------------------
 @st.cache_resource
 def load_vectorstore():
@@ -150,26 +170,19 @@ def load_vectorstore():
 
 vectorstore = load_vectorstore()
 
+docs = list(vectorstore.docstore._dict.values())
+bm25 = BM25Retriever.from_documents(docs)
+bm25.k = 3
 
-def create_retrievers(vectorstore):
-    vector_retriever = vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 3}
-    )
-
-    docs = list(vectorstore.docstore._dict.values())
-    bm25 = BM25Retriever.from_documents(docs)
-    bm25.k = 3
-
-    return vector_retriever, bm25
-
-
-vector_retriever, bm25_retriever = create_retrievers(vectorstore)
+vector_retriever = vectorstore.as_retriever(
+    search_type="similarity",
+    search_kwargs={"k": 3}
+)
 
 
 def hybrid_search(query):
     semantic = vector_retriever.invoke(query)
-    keyword = bm25_retriever.invoke(query)
+    keyword = bm25.invoke(query)
 
     combined = {
         doc.page_content: doc
@@ -180,7 +193,7 @@ def hybrid_search(query):
 
 
 # ------------------------------------------------
-# GROQ CLIENT
+# GROQ
 # ------------------------------------------------
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
@@ -191,7 +204,7 @@ client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display previous messages
+
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -200,9 +213,7 @@ for msg in st.session_state.messages:
 # ------------------------------------------------
 # CHAT INPUT
 # ------------------------------------------------
-prompt = st.chat_input(
-    "Enter: Solute, Charge, Solvent  (Example: Na+, 1, water)"
-)
+prompt = st.chat_input("Ask about ΔGsolv, molecules, solvents...")
 
 if prompt:
 
@@ -213,69 +224,27 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Parse input
-    try:
-        formula, charge, solvent = [
-            x.strip() for x in prompt.split(",")
-        ]
-    except:
-        response = "⚠️ Format: Solute, Charge, Solvent"
-        st.session_state.messages.append(
-            {"role": "assistant", "content": response}
-        )
-        with st.chat_message("assistant"):
-            st.markdown(response)
-        st.stop()
+    # 1️⃣ Try exact auto-detection
+    deltag, solute, solvent = try_exact_from_query(prompt)
 
-    matched_solute = resolve_solute(formula)
-    matched_solvent = match_solvent(solvent)
-
-    deltag = exact_lookup(
-        matched_solute,
-        matched_solvent,
-        charge
-    )
-
-    # ------------------------------------------------
-    # EXACT MATCH
-    # ------------------------------------------------
     if deltag is not None:
 
         response = f"""
-### ✅ Exact Dataset Match
+The predicted solvation free energy (ΔGsolv) of **{solute}**
+in **{solvent}** is **{deltag} kcal/mol**.
 
-**Solute:** {matched_solute}  
-**Solvent:** {matched_solvent}  
-**Charge:** {charge}  
+A negative value indicates thermodynamically favorable
+solute–solvent interactions, typically driven by
+ion–dipole or hydrogen bonding effects.
 
-### 💧 ΔGₛₒₗᵥ = {deltag} kcal/mol
-
----
-
-### 🔬 What is happening?
-
-Solvation free energy (ΔGsolv) measures the energy change 
-when the molecule moves from gas phase to solvent.
-
-• Negative ΔG → Favorable solvation  
-• Positive ΔG → Unfavorable solvation  
-
-This value is retrieved directly from MnSol dataset.
+A positive value would suggest weak or unfavorable
+interactions relative to the gas phase.
 """
 
-    # ------------------------------------------------
-    # HYBRID RAG
-    # ------------------------------------------------
     else:
 
-        query = f"""
-        SoluteName {matched_solute}
-        Solvent {matched_solvent}
-        Charge {charge}
-        solvation free energy DeltaG
-        """
-
-        docs = hybrid_search(query)
+        # 2️⃣ Hybrid RAG fallback
+        docs = hybrid_search(prompt)
         context = "\n\n".join(
             [doc.page_content for doc in docs]
         )
@@ -285,16 +254,14 @@ This value is retrieved directly from MnSol dataset.
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a chemistry expert.
-Explain:
-1. DeltaG value
-2. Molecular interactions
-3. Why positive/negative
-Use dataset context only."""
+                    "content": """You are an expert physical chemist.
+Answer scientifically.
+Explain molecular interactions clearly.
+If data exists in context, use it."""
                 },
                 {
                     "role": "user",
-                    "content": context
+                    "content": context + "\n\nQuestion: " + prompt
                 }
             ]
         )
