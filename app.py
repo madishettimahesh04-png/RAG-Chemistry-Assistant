@@ -19,10 +19,6 @@ from rapidfuzz import process, fuzz
 # ------------------------------------------------
 # PAGE CONFIG
 # ------------------------------------------------
-st.set_page_config(
-    page_title="MnSol ΔG Assistant",
-    page_icon="🧪",
-    layout="centered"
 )
 
 st.markdown("""
@@ -47,7 +43,7 @@ text-align:center;
 background: linear-gradient(90deg,#00c6ff,#0072ff);
 -webkit-background-clip: text;
 color: transparent;">
-🧪 MnSol AI Chemistry Assistant
+🧪 MnSol AI Solvation Assistant
 </h1>
 """, unsafe_allow_html=True)
 
