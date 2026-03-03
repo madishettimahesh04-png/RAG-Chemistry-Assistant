@@ -1,5 +1,5 @@
 # ==========================================================
-# 🤖 MnSol Conversational ΔG Assistant
+# 🤖 MnSol Conversational ΔG Assistant (Final Version)
 # ==========================================================
 
 import os
@@ -25,9 +25,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# ------------------------------------------------
-# STYLING
-# ------------------------------------------------
 st.markdown("""
 <style>
 [data-testid="stChatMessage"] {
@@ -54,7 +51,51 @@ color: transparent;">
 </h1>
 """, unsafe_allow_html=True)
 
-st.caption("Ask anything about solvation free energy (ΔGsolv)")
+st.caption("Ask about solvation free energy (ΔGsolv)")
+
+
+# ------------------------------------------------
+# GREETING DETECTION
+# ------------------------------------------------
+def is_greeting(text):
+    greetings = [
+        "hi", "hello", "hey", "hi there",
+        "good morning", "good afternoon",
+        "good evening", "greetings",
+        "howdy", "heyy", "hii"
+    ]
+    text = text.lower().strip()
+
+    if text in greetings:
+        return True
+
+    for word in greetings:
+        if word in text:
+            return True
+
+    return False
+
+
+# ------------------------------------------------
+# SMALL TALK DETECTION
+# ------------------------------------------------
+def is_small_talk(text):
+    small_talk_phrases = [
+        "how are you",
+        "how are you doing",
+        "how's it going",
+        "how is it going",
+        "what's up",
+        "whats up"
+    ]
+
+    text = text.lower().strip()
+
+    for phrase in small_talk_phrases:
+        if phrase in text:
+            return True
+
+    return False
 
 
 # ------------------------------------------------
@@ -80,19 +121,11 @@ df = pd.read_csv("five_columns_dataset_with_predictions_3.csv")
 solute_list = df["SoluteName"].astype(str).unique().tolist()
 solvent_list = df["Solvent"].astype(str).unique().tolist()
 
-formula_to_solute = dict(
-    zip(df["Formula"].astype(str).str.lower(), df["SoluteName"])
-)
-
 
 # ------------------------------------------------
 # MATCHING FUNCTIONS
 # ------------------------------------------------
 def resolve_solute(user_input):
-    key = user_input.lower().strip()
-    if key in formula_to_solute:
-        return formula_to_solute[key]
-
     match, score, _ = process.extractOne(
         user_input,
         solute_list,
@@ -111,16 +144,11 @@ def match_solvent(user_input):
 
 
 def try_exact_from_query(text):
-    """
-    Attempt to auto-detect solute, solvent, charge
-    from natural language question.
-    """
 
     found_solute = None
     found_solvent = None
     found_charge = None
 
-    # Detect charge like +1, -1, 2+
     charge_match = re.search(r"([+-]?\d+)", text)
     if charge_match:
         try:
@@ -128,7 +156,6 @@ def try_exact_from_query(text):
         except:
             pass
 
-    # Detect solute & solvent via fuzzy match
     for word in text.split():
         sol = resolve_solute(word)
         solv = match_solvent(word)
@@ -139,6 +166,7 @@ def try_exact_from_query(text):
             found_solvent = solv
 
     if found_solute and found_solvent:
+
         result = df[
             (df["SoluteName"] == found_solute) &
             (df["Solvent"] == found_solvent)
@@ -201,9 +229,35 @@ client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 # ------------------------------------------------
 # CHAT MEMORY
 # ------------------------------------------------
+# ------------------------------------------------
+# CHAT MEMORY INIT
+# ------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# ------------------------------------------------
+# CENTERED FIRST-TIME UI
+# ------------------------------------------------
+if len(st.session_state.messages) == 0:
+
+    st.markdown("""
+    <div style="
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        height:60vh;
+        text-align:center;
+        flex-direction:column;
+    ">
+        <h2>🧪 Welcome to MnSol ΔG Assistant</h2>
+        <p style="font-size:18px;">
+        Ask about solvation free energy (ΔGsolv)
+        </p>
+        <p style="font-size:16px;">
+        Example: <b>Na+, 1, water</b>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -213,7 +267,7 @@ for msg in st.session_state.messages:
 # ------------------------------------------------
 # CHAT INPUT
 # ------------------------------------------------
-prompt = st.chat_input("Ask about ΔGsolv, molecules, solvents...")
+prompt = st.chat_input("Ask about ΔGsolv...")
 
 if prompt:
 
@@ -224,49 +278,86 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 1️⃣ Try exact auto-detection
+    # Greeting
+    if is_greeting(prompt):
+
+        response = """
+👋 Hello! I am your **MnSol ΔG Chemistry Assistant**.
+
+I can help you with:
+
+• Solvation free energy (ΔGsolv)
+
+Please provide solute, solvent and charge.
+"""
+
+        with st.chat_message("assistant"):
+            st.markdown(response)
+
+        st.session_state.messages.append(
+            {"role": "assistant", "content": response}
+        )
+        st.stop()
+
+    # Small Talk
+    if is_small_talk(prompt):
+
+        response = """
+😊 I'm doing great! Thank you for asking.
+
+I specialize in solvation free energy (ΔGsolv).
+
+Please provide solute, solvent and charge.
+"""
+
+        with st.chat_message("assistant"):
+            st.markdown(response)
+
+        st.session_state.messages.append(
+            {"role": "assistant", "content": response}
+        )
+        st.stop()
+
+    # Exact Detection
     deltag, solute, solvent = try_exact_from_query(prompt)
 
     if deltag is not None:
 
-        response = f"""
+        base_response = f"""
 The predicted solvation free energy (ΔGsolv) of **{solute}**
 in **{solvent}** is **{deltag} kcal/mol**.
-
-A negative value indicates thermodynamically favorable
-solute–solvent interactions, typically driven by
-ion–dipole or hydrogen bonding effects.
-
-A positive value would suggest weak or unfavorable
-interactions relative to the gas phase.
 """
 
-    else:
-
-        # 2️⃣ Hybrid RAG fallback
-        docs = hybrid_search(prompt)
-        context = "\n\n".join(
-            [doc.page_content for doc in docs]
-        )
-
-        completion = client.chat.completions.create(
+        explanation_completion = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "system",
                     "content": """You are an expert physical chemist.
-Answer scientifically.
-Explain molecular interactions clearly.
-If data exists in context, use it."""
+Provide exactly 5 concise scientific explanation lines.
+No numbering.
+No bullet points.
+Each line must be meaningful and professional."""
                 },
                 {
                     "role": "user",
-                    "content": context + "\n\nQuestion: " + prompt
+                    "content": f"""
+Solute: {solute}
+Solvent: {solvent}
+DeltaGsolv: {deltag} kcal/mol
+
+Explain molecular interactions and thermodynamic meaning.
+"""
                 }
             ]
         )
 
-        response = completion.choices[0].message.content
+        llm_explanation = explanation_completion.choices[0].message.content
+
+        response = base_response + "\n\n" + llm_explanation
+
+    else:
+        response = "⚠️ Please provide solute, solvent and charge."
 
     with st.chat_message("assistant"):
         st.markdown(response)
