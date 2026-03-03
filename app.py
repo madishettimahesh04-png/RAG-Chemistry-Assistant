@@ -19,7 +19,6 @@ from rapidfuzz import process, fuzz
 # ------------------------------------------------
 # PAGE CONFIG
 # ------------------------------------------------
-)
 
 st.markdown("""
 <style>
