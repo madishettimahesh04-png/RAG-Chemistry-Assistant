@@ -51,7 +51,6 @@ color: transparent;">
 </h1>
 """, unsafe_allow_html=True)
 
-st.caption("Ask about solvation free energy (ΔGsolv)")
 
 
 # ------------------------------------------------
@@ -253,9 +252,6 @@ if len(st.session_state.messages) == 0:
         <p style="font-size:18px;">
         Ask about solvation free energy (ΔGsolv)
         </p>
-        <p style="font-size:16px;">
-        Example: <b>Na+, 1, water</b>
-        </p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -286,7 +282,7 @@ if prompt:
 
 I can help you with:
 
-• Solvation free energy (ΔGsolv)
+Solvation free energy (ΔGsolv)
 
 Please provide solute, solvent and charge.
 """
