@@ -70,6 +70,27 @@ def is_small_talk(text):
     text = text.lower()
     return any(word in text for word in small_talk)
 
+# ==========================================================
+# CAPABILITY / ABOUT DETECTION
+# ==========================================================
+
+def is_capability_question(text):
+    capability_words = [
+        "what can you do",
+        "your capabilities",
+        "features",
+        "about this chatbot",
+        "about you",
+        "what do you do",
+        "how can you help",
+        "mnsol ai",
+        "about mnsol assistant"
+    ]
+
+    text = text.lower()
+
+    return any(word in text for word in capability_words)
+
 
 def is_identity_question(text):
     identity_phrases = [
@@ -212,6 +233,16 @@ client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# ==========================================================
+# MEMORY LIMIT (REMEMBER LAST 30 MESSAGES)
+# ==========================================================
+
+MAX_MEMORY = 30
+
+def trim_memory():
+    if len(st.session_state.messages) > MAX_MEMORY:
+        st.session_state.messages = st.session_state.messages[-MAX_MEMORY:]
+
 if len(st.session_state.messages) == 0:
     st.markdown("""
     <div style="
@@ -243,6 +274,7 @@ if prompt:
     st.session_state.messages.append(
         {"role": "user", "content": prompt}
     )
+    trim_memory()
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -259,6 +291,33 @@ if prompt:
         response = "You're welcome! 😊 Let me know the solute, solvent and charge."
     elif is_goodbye(prompt):
         response = "Goodbye! 👋 Feel free to return for ΔG analysis anytime."
+    elif is_capability_question(prompt):
+    response = """
+### 🧪 MnSol AI Solvation Assistant
+
+I am an AI assistant designed to help researchers analyze **solvation free energy (ΔGsolv)** using the **MnSol dataset and machine learning predictions**.
+
+### 🔬 My Capabilities
+
+• Predict **solvation free energy (ΔGsolv)** for solute–solvent systems  
+• Interpret thermodynamic meaning of ΔG values  
+• Explain **molecular interactions in solution**  
+• Identify **solute and solvent names using fuzzy matching**  
+• Provide **scientific explanations using AI models**
+
+### 📊 Data Source
+Predictions are based on the **MnSol dataset combined with AI/ML models** for solvent screening.
+
+### 💡 Example Questions
+
+You can ask:
+
+- *ΔG of benzene in water*  
+- *Solvation energy of ethanol in methanol*  
+- *Explain ΔG for acetone in water*
+
+Provide **solute, solvent, and charge (if applicable)** for best results.
+"""
     elif is_irrelevant(prompt):
         response = "⚠️ I specialize in solvation free energy (ΔGsolv). Please provide solute, solvent and charge."
     else:
@@ -297,3 +356,4 @@ in **{solvent}** is **{deltag} kcal/mol**.
     st.session_state.messages.append(
         {"role": "assistant", "content": response}
     )
+    trim_memory()
