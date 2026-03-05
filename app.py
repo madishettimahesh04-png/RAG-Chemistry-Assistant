@@ -1,381 +1,370 @@
 # ==========================================================
-# MnSol ΔG Assistant – Professional Edition 2026
+# 🤖 MnSol Conversational ΔG Assistant (Production Version)
 # ==========================================================
 
 import os
 import re
-import zipfile
 import gdown
+import zipfile
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from rapidfuzz import process, fuzz
+
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from groq import Groq
-from datetime import datetime
+from rapidfuzz import process, fuzz
 
 
-# ----------------------------------------------------------
-# System Prompt
-# ----------------------------------------------------------
+# ------------------------------------------------
+# UI CONFIG
+# ------------------------------------------------
 
-SYSTEM_PROMPT = """
-You are MnSol-AI, an expert assistant in computational solvation chemistry.
-
-You specialize in:
-• Solvation free energy (ΔG_solv)
-• Molecular interactions in solvents
-• Thermodynamic interpretation
-• The MnSol dataset
-
-Provide concise scientific answers suitable for researchers.
-Prefer quantitative reasoning when possible.
-"""
-
-
-# ----------------------------------------------------------
-# Page Config
-# ----------------------------------------------------------
-
-st.set_page_config(
-    page_title="MnSol ΔG Assistant",
-    page_icon="🧪",
-    layout="wide"
-)
-
-# ----------------------------------------------------------
-# CSS Styling
-# ----------------------------------------------------------
+st.set_page_config(page_title="MnSol AI Assistant", layout="centered")
 
 st.markdown("""
 <style>
-.title-gradient {
-background: linear-gradient(90deg,#00c6ff,#0072ff);
--webkit-background-clip:text;
--webkit-text-fill-color:transparent;
-font-size:2.6rem;
-font-weight:700;
-text-align:center;
-margin-bottom:1rem;
+[data-testid="stChatMessage"] {
+    border-radius: 18px;
+    padding: 15px;
+    margin-bottom: 10px;
 }
-
-[data-testid="stChatMessage"]{
-border-radius:14px;
-padding:14px;
-margin-bottom:8px;
+[data-testid="stChatMessageContent"] {
+    font-size: 16px;
 }
-
-.example-box{
-background:#f8f9fa;
-padding:14px;
-border-radius:10px;
-border:1px solid #e0e0e0;
+.stChatInput textarea {
+    border-radius: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<h1 style="
+text-align:center;
+background: linear-gradient(90deg,#00c6ff,#0072ff);
+-webkit-background-clip: text;
+color: transparent;">
+🧪 MnSol AI Solvation Assistant
+</h1>
+""", unsafe_allow_html=True)
 
-# ----------------------------------------------------------
-# Cached Resources
-# ----------------------------------------------------------
+# ==========================================================
+# INTENT DETECTION
+# ==========================================================
 
-@st.cache_resource
-def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-
-
-@st.cache_resource
-def load_vectorstore():
-
-    INDEX_FOLDER = "mnsol_faiss_index"
-
-    if not os.path.exists(INDEX_FOLDER):
-
-        with st.spinner("Downloading vector database..."):
-
-            url = "https://drive.google.com/uc?id=1gUKTTKNjOqI2jP3I6bGVSmFtb3JD7jn2"
-
-            gdown.download(url, "mnsol_faiss_index.zip", quiet=False)
-
-            with zipfile.ZipFile("mnsol_faiss_index.zip","r") as z:
-                z.extractall(".")
-
-    return FAISS.load_local(
-        INDEX_FOLDER,
-        embeddings=get_embeddings(),
-        allow_dangerous_deserialization=True
-    )
+def is_greeting(text):
+    greetings = ["hi","hello","hey","hi there","good morning","good afternoon","good evening"]
+    text = text.lower()
+    return any(word in text for word in greetings)
 
 
-@st.cache_resource
-def get_groq():
-    return Groq(api_key=st.secrets["GROQ_API_KEY"])
+def is_small_talk(text):
+    small_talk = ["how are you","how are you doing","how's it going","what's up"]
+    text = text.lower()
+    return any(word in text for word in small_talk)
 
 
-@st.cache_data
-def load_data():
-    return pd.read_csv("five_columns_dataset_with_predictions_3.csv")
+def is_capability_question(text):
+    capability_words = [
+        "what can you do",
+        "your capabilities",
+        "features",
+        "about this chatbot",
+        "about you",
+        "what do you do",
+        "how can you help",
+        "mnsol ai",
+        "about mnsol assistant"
+    ]
+    text = text.lower()
+    return any(word in text for word in capability_words)
 
 
-vector_db = load_vectorstore()
-groq = get_groq()
-df = load_data()
+def is_identity_question(text):
+    identity_phrases = ["your name","who are you","what is your name","tell me about yourself"]
+    text = text.lower()
+    return any(word in text for word in identity_phrases)
+
+
+def is_thanks(text):
+    thanks_words = ["thank you","thanks","thx"]
+    text = text.lower()
+    return any(word in text for word in thanks_words)
+
+
+def is_goodbye(text):
+    goodbye_words = ["bye","goodbye","see you"]
+    text = text.lower()
+    return any(word in text for word in goodbye_words)
+
+
+def is_irrelevant(text):
+    chemistry_keywords = [
+        "solvent","solute","delta","deltag",
+        "water","methanol","ethanol","ion","molecule","benzene"
+    ]
+    text = text.lower()
+    return not any(word in text for word in chemistry_keywords)
+
+
+# ==========================================================
+# DATA LOADING
+# ==========================================================
+
+FILE_ID = "1gUKTTKNjOqI2jP3I6bGVSmFtb3JD7jn2"
+ZIP_FILE = "mnsol_faiss_index.zip"
+INDEX_FOLDER = "mnsol_faiss_index"
+
+if not os.path.exists(INDEX_FOLDER):
+
+    with st.spinner("Downloading vector database..."):
+
+        url = f"https://drive.google.com/uc?id={FILE_ID}"
+
+        gdown.download(url, ZIP_FILE, quiet=False)
+
+        with zipfile.ZipFile(ZIP_FILE, "r") as zip_ref:
+            zip_ref.extractall(".")
+
+
+df = pd.read_csv("five_columns_dataset_with_predictions_3.csv")
 
 solute_list = df["SoluteName"].astype(str).unique().tolist()
 solvent_list = df["Solvent"].astype(str).unique().tolist()
 
 
-# ----------------------------------------------------------
-# Fuzzy Matching
-# ----------------------------------------------------------
+# ==========================================================
+# FUZZY MATCHING
+# ==========================================================
 
-def find_solute(text):
-
-    match, score, _ = process.extractOne(
-        text, solute_list, scorer=fuzz.WRatio
-    )
-
-    return match if score > 78 else None
-
-
-def find_solvent(text):
+def resolve_solute(user_input):
 
     match, score, _ = process.extractOne(
-        text, solvent_list, scorer=fuzz.WRatio
+        user_input,
+        solute_list,
+        scorer=fuzz.WRatio
     )
 
-    return match if score > 78 else None
+    return match if score > 75 else None
 
 
-# ----------------------------------------------------------
-# Query Parsing
-# ----------------------------------------------------------
+def match_solvent(user_input):
 
-def parse_query(text):
+    match, score, _ = process.extractOne(
+        user_input,
+        solvent_list,
+        scorer=fuzz.WRatio
+    )
 
-    text = text.lower()
-    text = text.replace("/", " ").replace("→"," ")
+    return match if score > 75 else None
 
-    charge = None
+
+# ==========================================================
+# QUERY PARSER
+# ==========================================================
+
+def try_exact_from_query(text):
+
+    found_solute = None
+    found_solvent = None
+    found_charge = None
 
     charge_match = re.search(r"([+-]?\d+)", text)
 
     if charge_match:
         try:
-            charge = int(charge_match.group())
+            found_charge = int(charge_match.group())
         except:
             pass
 
-    words = re.findall(r"[a-zA-Z0-9+\-().]+", text)
+    for word in text.split():
 
-    solute = None
-    solvent = None
+        sol = resolve_solute(word)
+        solv = match_solvent(word)
 
-    for w in words:
+        if sol:
+            found_solute = sol
 
-        if not solute:
-            s = find_solute(w)
-            if s:
-                solute = s
+        if solv:
+            found_solvent = solv
 
-        if not solvent:
-            s = find_solvent(w)
-            if s:
-                solvent = s
+    if found_solute and found_solvent:
 
-    return solute, solvent, charge
+        result = df[
+            (df["SoluteName"] == found_solute) &
+            (df["Solvent"] == found_solvent)
+        ]
 
+        if found_charge is not None:
+            result = result[result["Charge"] == found_charge]
 
-# ----------------------------------------------------------
-# Response Generator
-# ----------------------------------------------------------
+        if len(result) > 0:
+            return result.iloc[0]["Predicted_DeltaGsolv"], found_solute, found_solvent
 
-def generate_answer(question, history):
-
-    solute, solvent, charge = parse_query(question)
-
-    if solute and solvent:
-
-        mask = (df["SoluteName"]==solute) & (df["Solvent"]==solvent)
-
-        if charge is not None:
-            mask &= (df["Charge"]==charge)
-
-        result = df[mask]
-
-        if not result.empty:
-
-            row = result.iloc[0]
-            deltag = row["Predicted_DeltaGsolv"]
-
-            base = f"""
-**Exact MnSol match**
-
-Solute: **{solute}**  
-Solvent: **{solvent}**
-
-**ΔG_solv = {deltag:.2f} kcal/mol**
-"""
-
-            explanation = groq.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role":"system","content":SYSTEM_PROMPT},
-                    {"role":"user",
-                    "content":f"Explain thermodynamic meaning of ΔGsolv {deltag} kcal/mol for {solute} in {solvent}."}
-                ],
-                temperature=0.3,
-                max_tokens=200
-            )
-
-            return base + "\n\n" + explanation.choices[0].message.content, True, None
+    return None, None, None
 
 
-    docs = vector_db.similarity_search(question, k=4)
+# ==========================================================
+# GROQ LLM
+# ==========================================================
 
-    context = "\n\n".join(d.page_content for d in docs)
-
-    messages = [
-        {"role":"system","content":SYSTEM_PROMPT + "\n\nContext:\n"+context},
-        *history[-12:],
-        {"role":"user","content":question}
-    ]
-
-    stream = groq.chat.completions.create(
-        model="llama-3.1-70b-versatile",
-        messages=messages,
-        temperature=0.4,
-        max_tokens=600,
-        stream=True
-    )
-
-    return stream, False, None
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 
-# ----------------------------------------------------------
-# Session State
-# ----------------------------------------------------------
+# ==========================================================
+# CHAT MEMORY
+# ==========================================================
 
 if "messages" not in st.session_state:
-    st.session_state.messages=[]
+    st.session_state.messages = []
+
+MAX_MEMORY = 30
+
+def trim_memory():
+
+    if len(st.session_state.messages) > MAX_MEMORY:
+        st.session_state.messages = st.session_state.messages[-MAX_MEMORY:]
 
 
-# ----------------------------------------------------------
-# Tabs
-# ----------------------------------------------------------
+# ==========================================================
+# WELCOME SCREEN
+# ==========================================================
 
-tab_chat, tab_about, tab_data = st.tabs(
-    ["Chat","About","Dataset"]
-)
-
-
-# ----------------------------------------------------------
-# Chat
-# ----------------------------------------------------------
-
-with tab_chat:
-
-    if not st.session_state.messages:
-
-        st.markdown('<div class="title-gradient">MnSol ΔG Solvation Assistant</div>', unsafe_allow_html=True)
-
-        st.markdown("""
-<div class="example-box">
-
-Example queries
-
-benzene in water  
-Na+ in methanol charge +1  
-Why hydrocarbons have positive ΔG in water?
-
-</div>
-""", unsafe_allow_html=True)
-
-
-    for msg in st.session_state.messages:
-
-        avatar = "🧑‍🔬" if msg["role"]=="user" else "🧪"
-
-        with st.chat_message(msg["role"], avatar=avatar):
-            st.markdown(msg["content"])
-
-
-    if prompt := st.chat_input("Ask about solvation free energy..."):
-
-        st.session_state.messages.append({"role":"user","content":prompt})
-
-        with st.chat_message("assistant", avatar="🧪"):
-
-            result, exact, _ = generate_answer(prompt, st.session_state.messages)
-
-            placeholder = st.empty()
-            full=""
-
-            if exact:
-
-                full=result
-                placeholder.markdown(full)
-
-            else:
-
-                for chunk in result:
-
-                    if delta:=chunk.choices[0].delta.content:
-
-                        full+=delta
-                        placeholder.markdown(full+"▌")
-
-                placeholder.markdown(full)
-
-        st.session_state.messages.append(
-            {"role":"assistant","content":full}
-        )
-
-
-# ----------------------------------------------------------
-# About
-# ----------------------------------------------------------
-
-with tab_about:
-
-    st.header("About MnSol Assistant")
+if len(st.session_state.messages) == 0:
 
     st.markdown("""
-AI assistant for exploring **solvation free energy (ΔG_solv)** from the **MnSol dataset**.
-
-Technology
-
-• Streamlit  
-• FAISS semantic search  
-• HuggingFace embeddings  
-• Groq Llama-3.1  
-• RapidFuzz matching
-""")
+    <div style="display:flex;justify-content:center;align-items:center;height:60vh;text-align:center;flex-direction:column;">
+        <h2>🧪 Welcome to MnSol ΔG Assistant</h2>
+        <p>Ask about solvation free energy (ΔGsolv)</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# ----------------------------------------------------------
-# Dataset
-# ----------------------------------------------------------
+for msg in st.session_state.messages:
 
-with tab_data:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-    st.metric("Unique Solutes", len(solute_list))
-    st.metric("Unique Solvents", len(solvent_list))
-    st.metric("Total Systems", len(df))
 
-    fig = px.histogram(
-        df,
-        x="Predicted_DeltaGsolv",
-        nbins=40,
-        title="Distribution of ΔG_solv"
-    )
+# ==========================================================
+# CHAT INPUT
+# ==========================================================
 
-    st.plotly_chart(fig, use_container_width=True)
+prompt = st.chat_input("Ask about ΔGsolv...")
 
-    st.dataframe(
-        df.head(300)[["SoluteName","Solvent","Charge","Predicted_DeltaGsolv"]],
-        use_container_width=True
-    )
+if prompt:
+
+    st.session_state.messages.append({"role":"user","content":prompt})
+    trim_memory()
+
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # ------------------------------------------------
+    # INTENT ROUTING
+    # ------------------------------------------------
+
+    if is_greeting(prompt):
+
+        response = "👋 Hello! I am your MnSol ΔG Chemistry Assistant."
+
+    elif is_small_talk(prompt):
+
+        response = "😊 I'm doing great! How can I help with solvation free energy?"
+
+    elif is_identity_question(prompt):
+
+        response = "I am an AI assistant specialized in predicting and explaining solvation free energy (ΔGsolv)."
+
+    elif is_thanks(prompt):
+
+        response = "You're welcome! 😊 Let me know the solute, solvent and charge."
+
+    elif is_goodbye(prompt):
+
+        response = "Goodbye! 👋 Feel free to return for ΔG analysis anytime."
+
+    elif is_capability_question(prompt):
+
+        response = """
+### 🧪 MnSol AI Solvation Assistant
+
+I help researchers analyze **solvation free energy (ΔGsolv)** using the **MnSol dataset and AI models**.
+
+### 🔬 Capabilities
+
+• Predict ΔGsolv for solute–solvent systems  
+• Explain thermodynamic meaning of ΔG values  
+• Analyze molecular interactions in solution  
+• Identify molecules using fuzzy matching  
+• Provide scientific explanations using AI  
+
+### Example Questions
+
+• ΔG of benzene in water  
+• Solvation energy of ethanol in methanol  
+• Explain ΔG for acetone in water
+"""
+
+    # ------------------------------------------------
+    # DATASET SEARCH
+    # ------------------------------------------------
+
+    else:
+
+        deltag, solute, solvent = try_exact_from_query(prompt)
+
+        if deltag is not None:
+
+            base = f"""
+The predicted solvation free energy (ΔGsolv) of **{solute}**
+in **{solvent}** is **{deltag} kcal/mol**.
+"""
+
+            explanation = client.chat.completions.create(
+
+                model="llama-3.1-8b-instant",
+
+                messages=[
+                    {
+                        "role":"system",
+                        "content":"Provide exactly 5 concise scientific lines explaining the thermodynamic meaning and molecular interactions."
+                    },
+                    {
+                        "role":"user",
+                        "content":f"Solute: {solute}, Solvent: {solvent}, DeltaG: {deltag}"
+                    }
+                ]
+            )
+
+            response = base + "\n\n" + explanation.choices[0].message.content
+
+        else:
+
+            llm_response = client.chat.completions.create(
+
+                model="llama-3.1-8b-instant",
+
+                messages=[
+                    {
+                        "role":"system",
+                        "content":"You are a computational chemistry assistant specializing in solvation thermodynamics."
+                    },
+                    {
+                        "role":"user",
+                        "content":prompt
+                    }
+                ]
+            )
+
+            response = llm_response.choices[0].message.content
+
+
+    # ------------------------------------------------
+    # DISPLAY RESPONSE
+    # ------------------------------------------------
+
+    with st.chat_message("assistant"):
+        st.markdown(response)
+
+    st.session_state.messages.append({"role":"assistant","content":response})
+    trim_memory()
