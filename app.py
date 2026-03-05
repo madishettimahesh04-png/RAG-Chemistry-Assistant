@@ -319,9 +319,7 @@ You can ask:
 
 Provide **solute, solvent, and charge (if applicable)** for best results.
 """
-    elif is_irrelevant(prompt):
-        else:
-
+elif is_irrelevant(prompt):
     llm_response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
