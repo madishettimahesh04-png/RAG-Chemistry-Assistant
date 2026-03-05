@@ -320,7 +320,24 @@ You can ask:
 Provide **solute, solvent, and charge (if applicable)** for best results.
 """
     elif is_irrelevant(prompt):
-        response = "⚠️ I specialize in solvation free energy (ΔGsolv). Please provide solute, solvent and charge."
+        else:
+
+    llm_response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {
+                "role": "system",
+                "content": """You are a computational chemistry assistant specialized in solvation thermodynamics and the MnSol dataset. 
+If a user asks about chemistry, solvents, molecules, or thermodynamics, provide a helpful scientific explanation."""
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    response = llm_response.choices[0].message.content
     else:
 
         deltag, solute, solvent = try_exact_from_query(prompt)
