@@ -84,7 +84,8 @@ def is_capability_question(text):
         "what do you do",
         "how can you help",
         "mnsol ai",
-        "about mnsol assistant"
+        "about mnsol assistant",
+        "can you tell about your capabilities"
     ]
 
     text = text.lower()
