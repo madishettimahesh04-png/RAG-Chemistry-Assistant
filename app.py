@@ -292,7 +292,7 @@ if prompt:
     elif is_goodbye(prompt):
         response = "Goodbye! 👋 Feel free to return for ΔG analysis anytime."
     elif is_capability_question(prompt):
-    response = """
+        response = """
 ### 🧪 MnSol AI Solvation Assistant
 
 I am an AI assistant designed to help researchers analyze **solvation free energy (ΔGsolv)** using the **MnSol dataset and machine learning predictions**.
